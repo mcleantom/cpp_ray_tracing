@@ -96,6 +96,19 @@ Vec3f cast_ray(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphere> &s
 
     for (size_t i=0; i<lights.size(); i++) {
         Vec3f light_dir = (lights[i].position - point).normalize();
+        float light_distance = (lights[i].position-point).norm();
+        Vec3f shadow_orig = light_dir*N < 0 ? point - N*1e-3 : point + N*1e-3;
+
+        Vec3f shadow_pt, shadow_N;
+        Material tmpmaterial;
+
+        /*
+            If a ray going from the point towards the light intersects another object, then it is in the shadow of that 
+            object, and skip that light source.
+        */
+        if (scene_intersect(shadow_orig, light_dir, spheres, shadow_pt, shadow_N, tmpmaterial) && (shadow_pt-shadow_orig).norm() < light_distance)
+            continue;
+
         diffuse_light_intensity += lights[i].intensity * std::max(0.f, light_dir*N);
         specular_light_intensity += powf(
             std::max(0.f, reflect(light_dir, N)*dir), 
@@ -137,18 +150,20 @@ void render(const std::vector<Sphere> &spheres, const std::vector<Light> &lights
 }
 
 int main() {
-    Material ivory(Vec2f(0.6, 0.3), Vec3f(0.4, 0.4, 0.3), 50.);
+    Material      ivory(Vec2f(0.6, 0.3), Vec3f(0.4, 0.4, 0.3), 50.);
     Material red_rubber(Vec2f(0.9, 0.1), Vec3f(0.3, 0.1, 0.1), 10.);
     
     std::vector<Sphere> spheres = {
-        Sphere(Vec3f(-3, 0, -16), 2, ivory),
-        Sphere(Vec3f(-1.0, -1.5, -12), 2.5, red_rubber),
-        Sphere(Vec3f(1.5, -0.5, -18), 3, red_rubber),
-        Sphere(Vec3f(7, 5, -18), 4, ivory)
+        Sphere(Vec3f(-3,    0,   -16),  2, ivory),
+        Sphere(Vec3f(-1.0, -1.5, -12),  2, red_rubber),
+        Sphere(Vec3f( 1.5, -0.5, -18),  3, red_rubber),
+        Sphere(Vec3f( 7,    5,   -18),  4, ivory)
     };
 
     std::vector<Light> lights = {
-        Light(Vec3f(-20, 20, 20), 1.5)
+        Light(Vec3f(-20, 20,  20), 1.5),
+        Light(Vec3f( 30, 50, -25), 1.8),
+        Light(Vec3f( 30, 20,  30),  1.8)
     };
     render(spheres, lights);
     return 0;
