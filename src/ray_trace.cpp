@@ -5,11 +5,19 @@
 #include <vector>
 #include "geometry.h"
 
+struct Material {
+    Material(const Vec3f &color) : diffuse_color(color) {}
+    Material() : diffuse_color() {}
+    Vec3f diffuse_color;
+};
+
+
 struct Sphere {
     Vec3f center;
     float radius;
+    Material material;
 
-    Sphere(const Vec3f &c, const float &r) : center(c), radius(r) {}
+    Sphere(const Vec3f &c, const float &r, const Material &m) : center(c), radius(r), material(m) {}
 
     bool ray_intersect(const Vec3f &orig, const Vec3f &dir, float &t0) const {
         // https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-sphere-intersection
@@ -26,7 +34,14 @@ struct Sphere {
     }
 };
 
-bool scene_intersect(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphere> &spheres, Vec3f &hit, Vec3f &N) {
+struct Light {
+    Light(const Vec3f &p, const float &i): position(p), intensity(i) {}
+    Vec3f position;
+    float intensity;
+};
+
+bool scene_intersect(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphere> &spheres, Vec3f &hit, Vec3f &N, Material &material) {
+    // Makes sure that the closest sphere gets drawn
     float spheres_dist = std::numeric_limits<float>::max();
 
     for (size_t i=0; i<spheres.size(); i++) {
@@ -35,21 +50,31 @@ bool scene_intersect(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphe
             spheres_dist = dist_i;
             hit = orig + dir*dist_i;
             N = (hit - spheres[i].center).normalize();
+            material = spheres[i].material;
         }
     }
 
     return spheres_dist < 1000;
 }
 
-Vec3f cast_ray(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphere> &spheres) {
+Vec3f cast_ray(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphere> &spheres, const std::vector<Light> &lights) {
     Vec3f point, N;
-    if (!scene_intersect(orig, dir, spheres, point, N)) {
+    Material material;
+    float diffuse_light_intensity = 0;
+
+    if (!scene_intersect(orig, dir, spheres, point, N, material)) {
         return Vec3f(0.2, 0.7, 0.8);  // Background Colour
     }
-    return Vec3f(0.4, 0.4, 0.3);  // Sphere colour
+
+    for (size_t i=0; i<lights.size(); i++) {
+        Vec3f light_dir = (lights[i].position - point).normalize();
+        diffuse_light_intensity += lights[i].intensity * std::max(0.f, light_dir*N);
+    }
+
+    return material.diffuse_color * diffuse_light_intensity;  // Sphere colour
 }
 
-void render(const std::vector<Sphere> &spheres) {
+void render(const std::vector<Sphere> &spheres, const std::vector<Light> &lights) {
     const int width    = 1024;
     const int height   = 768;
     const int fov      = M_PI/2.;
@@ -61,7 +86,7 @@ void render(const std::vector<Sphere> &spheres) {
             float x = (2*(i + 0.5)/(float)width - 1)*tan(fov/2.)*width/(float)height;
             float y = -(2*(j+0.5)/(float)height - 1)*tan(fov/2.);
             Vec3f dir = Vec3f(x, y, -1).normalize();
-            framebuffer[i+j*width] = cast_ray(Vec3f(0, 0, 0), dir, spheres);
+            framebuffer[i+j*width] = cast_ray(Vec3f(0, 0, 0), dir, spheres, lights);
         }
     }
 
@@ -77,12 +102,19 @@ void render(const std::vector<Sphere> &spheres) {
 }
 
 int main() {
+    Material ivory(Vec3f(0.4, 0.4, 0.3));
+    Material red_rubber(Vec3f(0.3, 0.1, 0.1));
+    
     std::vector<Sphere> spheres = {
-        Sphere(Vec3f(-3, 0, -16), 2),
-        Sphere(Vec3f(-1.0, -1.5, -12), 2.5),
-        Sphere(Vec3f(1.5, -0.5, -18), 3),
-        Sphere(Vec3f(7, 5, -18), 4)
+        Sphere(Vec3f(-3, 0, -16), 2, ivory),
+        Sphere(Vec3f(-1.0, -1.5, -12), 2.5, red_rubber),
+        Sphere(Vec3f(1.5, -0.5, -18), 3, red_rubber),
+        Sphere(Vec3f(7, 5, -18), 4, ivory)
     };
-    render(spheres);
+
+    std::vector<Light> lights = {
+        Light(Vec3f(-20, 20, 20), 1.5)
+    };
+    render(spheres, lights);
     return 0;
 }
