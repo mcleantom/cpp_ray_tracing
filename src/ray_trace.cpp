@@ -6,9 +6,10 @@
 #include "geometry.h"
 
 struct Material {
-    Material(const Vec3f &a, const Vec3f &color, const float &spec) :albedo(a), diffuse_color(color), specular_exponent(spec) {}
-    Material() : albedo(1,0,0), diffuse_color(), specular_exponent() {}
-    Vec3f albedo;
+    Material(const float &r, const Vec4f &a, const Vec3f &color, const float &spec) : refractive_index(r), albedo(a), diffuse_color(color), specular_exponent(spec) {}
+    Material() : refractive_index(1), albedo(1,0,0,0), diffuse_color(), specular_exponent() {}
+    float refractive_index;
+    Vec4f albedo;
     Vec3f diffuse_color;
     float specular_exponent;
 };
@@ -42,7 +43,28 @@ struct Light {
     float intensity;
 };
 
+Vec3f refract(const Vec3f &I, const Vec3f &N, const float &refractive_index) {
+    // Snells law - https://en.wikipedia.org/wiki/Snell%27s_law#Vector_form
+    float cosi = - std::max(-1.f, std::min(1.f, I*N));
+    float etai = 1, etat = refractive_index;
+    Vec3f n = N;
+    if (cosi < 0) {
+        /* theta_1 must be positive, which it is if N is the normal vector that
+        points towards the point source, so swap the direction.
+        */
+        cosi = -cosi;
+        std::swap(etai, etat);
+        n = -N;
+    }
+    float eta = etai/etat; // r = (n1/n2)
+    float k = 1 - eta*eta*(1 - cosi*cosi); // cos(theta2)^2
+
+    return k < 0 ? Vec3f(0, 0, 0) : I*eta + n*(eta * cosi - sqrtf(k));
+}
+
 Vec3f reflect(const Vec3f &I, const Vec3f &N) {
+    // Reflection vector
+    // Vf = I + 2*cos(01)*N = I * 2*(I*N)*N
     return I - N*2.f*(I*N);
 }
 
@@ -90,13 +112,17 @@ Vec3f cast_ray(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphere> &s
     float diffuse_light_intensity = 0,
           specular_light_intensity = 0;
 
-    if (depth >= 100 || !scene_intersect(orig, dir, spheres, point, N, material)) {
+    if (depth >= 4 || !scene_intersect(orig, dir, spheres, point, N, material)) {
         return Vec3f(0.2, 0.7, 0.8);  // Background Colour
     }
 
     Vec3f reflect_dir = reflect(dir, N).normalize();
     Vec3f reflect_orig = reflect_dir*N < 0 ? point - N*1e-3 : point + N*1e-3;
     Vec3f reflect_color = cast_ray(reflect_orig, reflect_dir, spheres, lights, depth+1);
+
+    Vec3f refract_dir = refract(dir, N, material.refractive_index).normalize();
+    Vec3f refract_orig = refract_dir*N < 0 ? point - N*1e-3 : point + N*1e-3;
+    Vec3f refract_color = cast_ray(refract_orig, refract_dir, spheres, lights, depth+1);
 
     for (size_t i=0; i<lights.size(); i++) {
         Vec3f light_dir = (lights[i].position - point).normalize();
@@ -120,7 +146,7 @@ Vec3f cast_ray(const Vec3f &orig, const Vec3f &dir, const std::vector<Sphere> &s
         );
     }
 
-    return material.diffuse_color * diffuse_light_intensity * material.albedo[0] + Vec3f(1., 1., 1.)*specular_light_intensity*material.albedo[1] + reflect_color*material.albedo[2];  // Sphere colour
+    return material.diffuse_color * diffuse_light_intensity * material.albedo[0] + Vec3f(1., 1., 1.)*specular_light_intensity*material.albedo[1] + reflect_color*material.albedo[2] + refract_color*material.albedo[3];  // Sphere colour
 }
 
 void render(const std::vector<Sphere> &spheres, const std::vector<Light> &lights) {
@@ -154,13 +180,14 @@ void render(const std::vector<Sphere> &spheres, const std::vector<Light> &lights
 }
 
 int main() {
-    Material      ivory(Vec3f(0.6,  0.3, 0.1), Vec3f(0.4, 0.4, 0.3),   50.);
-    Material red_rubber(Vec3f(0.9,  0.1, 0.0), Vec3f(0.3, 0.1, 0.1),   10.);
-    Material     mirror(Vec3f(0.0, 10.0, 0.8), Vec3f(1.0, 1.0, 1.0), 1425.);
+    Material      ivory(1.0, Vec4f(0.6,  0.3, 0.1, 0.0), Vec3f(0.4, 0.4, 0.3),   50.);
+    Material      glass(1.5, Vec4f( 0.,  0.5, 0.1, 0.8), Vec3f(0.6, 0.7, 0.8),  125.);
+    Material red_rubber(1.0, Vec4f(0.9,  0.1, 0.0, 0.0), Vec3f(0.3, 0.1, 0.1),   10.);
+    Material     mirror(1.0, Vec4f(0.0, 10.0, 0.8, 0.0), Vec3f(1.0, 1.0, 1.0), 1425.);
     
     std::vector<Sphere> spheres = {
         Sphere(Vec3f(-3,    0,   -16),  2,      ivory),
-        Sphere(Vec3f(-1.0, -1.5, -12),  2,     mirror),
+        Sphere(Vec3f(-1.0, -1.5, -12),  2,      glass),
         Sphere(Vec3f( 1.5, -0.5, -18),  3, red_rubber),
         Sphere(Vec3f( 7,    5,   -18),  4,     mirror)
     };
@@ -168,7 +195,7 @@ int main() {
     std::vector<Light> lights = {
         Light(Vec3f(-20, 20,  20), 1.5),
         Light(Vec3f( 30, 50, -25), 1.8),
-        Light(Vec3f( 30, 20,  30),  1.8)
+        Light(Vec3f( 30, 20,  30), 1.)
     };
     render(spheres, lights);
     return 0;
