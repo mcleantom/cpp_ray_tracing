@@ -34,3 +34,6 @@
 # Images
 *.jpg
 *.ppm
+
+# VSCode
+*.log
