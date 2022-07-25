@@ -46,7 +46,7 @@ struct SkyBox {
     SkyBox(char const *f) : filename(f), req_comp(0) {
         unsigned char *pixmap = stbi_load(filename, &width, &height, &comp, req_comp);
         if (!pixmap || 3!=comp) {
-            std::cerr << "Cannog load the skybox image." << std::endl;
+            std::cerr << "Cannot load the skybox image." << std::endl;
             std::abort();
         }
 
@@ -189,8 +189,10 @@ void render(const std::vector<Sphere> &spheres, const std::vector<Light> &lights
     const int fov      = M_PI/2.;
 
     std::vector<Vec3f> framebuffer(width*height); // One dimensional array of Vec3f values (r, g, b)
-
+    
+    #pragma omp parallel for
     for (size_t j = 0; j<height; j++) {
+        #pragma omp parallel for
         for (size_t i = 0; i<width; i++) {
             float x = (2*(i + 0.5)/(float)width - 1)*tan(fov/2.)*width/(float)height;
             float y = -(2*(j+0.5)/(float)height - 1)*tan(fov/2.);
@@ -202,6 +204,7 @@ void render(const std::vector<Sphere> &spheres, const std::vector<Light> &lights
     std::ofstream ofs; // save the framebuffer to file
     ofs.open("../out.ppm");
     ofs << "P6\n" << width << " " << height << "\n255\n";
+
     for (size_t i = 0; i < height*width; ++i) {
         Vec3f &c = framebuffer[i];
         float max = std::max(c[0], std::max(c[1], c[2]));
@@ -213,10 +216,9 @@ void render(const std::vector<Sphere> &spheres, const std::vector<Light> &lights
     ofs.close();
 }
 
+
+
 int main() {
-    // int envmap_width, envmap_height;
-    // int n = -1;
-    // unsigned char *pixmap = stbi_load("../envmap2.jpg", &envmap_width, &envmap_height, &n, 0);
     SkyBox    coastline("../envmap.jpg");
     Material      ivory(1.0, Vec4f(0.6,  0.3, 0.1, 0.0), Vec3f(0.4, 0.4, 0.3),   50.);
     Material      glass(1.5, Vec4f( 0.,  0.5, 0.1, 0.8), Vec3f(0.6, 0.7, 0.8),  125.);
@@ -226,8 +228,8 @@ int main() {
     std::vector<Sphere> spheres = {
         Sphere(Vec3f(-3,    0,   -16),  2,      ivory),
         Sphere(Vec3f(-1.0, -1.5, -12),  2,      glass),
-        Sphere(Vec3f( 1.5, -0.5, -18),  3, red_rubber),
-        Sphere(Vec3f( 7,    5,   -18),  4,     mirror)
+        Sphere(Vec3f( 1.5, -0.5, -18),  3, red_rubber)
+        //Sphere(Vec3f( 7,    5,   -18),  4,     mirror)
     };
 
     std::vector<Light> lights = {
